@@ -841,7 +841,8 @@ var state = {
   fakeDoors:{save:0, dark:0},
   play:{ view:"menu", scope:null, subScope:null, cards:[], sorted:{}, currentIdx:0, sayItCard:null, sayItRound:1, strategyRound:[], strategyIdx:0 },
   /* Protocol additions */
-  protocol:{ phase:"gate", started:false, done:{}, skipped:{}, participantCode:"",
+  protocol:{ phase:"gate", started:false, unlocked:false, done:{}, skipped:{}, participantCode:"",
+    stamps:{},
     consent:{participate:null, record:null, photo:null}, safetyPause:null,
     baseline:{whyToday:"",biggestNeed:"",usefulOutcome:"",probe:""},
     softdive:{choice:"",freeform:"",cardsPresent:[],fitNotes:""},
@@ -860,13 +861,31 @@ var state = {
 
 var STORAGE_KEY = "needsTree.unified.v1";
 var saveTimer = null;
+var saveWarned = false;
 function saveState(){
   if(saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(function(){
-    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      saveWarned = false;
+    }catch(e){
+      if(!saveWarned){
+        saveWarned = true;
+        console.warn("[Needs Tree] Could not save to localStorage. The session will be lost if the tab is closed. Private browsing, or the storage quota, is the usual cause.");
+        try{
+          if(!document.getElementById('saveFailBanner')){
+            var banner = document.createElement('div');
+            banner.id = "saveFailBanner";
+            banner.style.cssText = "position:fixed;bottom:0;left:0;right:0;background:#B85C6B;color:#fff;padding:12px 16px;font:14px/1.4 sans-serif;z-index:9999;text-align:center";
+            banner.textContent = "Heads up: this browser is not saving your work. Close private browsing mode, or export before you close the tab.";
+            document.body.appendChild(banner);
+          }
+        }catch(e2){}
+      }
+    }
   }, 300);
 }
-function loadState(){
+  function loadState(){
   try{
     var raw = localStorage.getItem(STORAGE_KEY);
     if(!raw) return;
@@ -889,6 +908,11 @@ function loadState(){
    ============================================================ */
 function $(s){return document.querySelector(s)}
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
+  function stamp(field){
+  if(!state.protocol) return;
+  state.protocol.stamps = state.protocol.stamps || {};
+  state.protocol.stamps[field] = new Date().toISOString();
+}
 function scoreStatus(s){if(s<=3)return "healthy";if(s<=7)return "moderate";return "strained"}
 function isEmergency(layer, name){return state.emergencyPicks[layer] && state.emergencyPicks[layer].indexOf(name)>=0}
 function shuffle(a){var b=a.slice();for(var i=b.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=b[i];b[i]=b[j];b[j]=t}return b}
@@ -2547,33 +2571,35 @@ function renderProtocol(){
   c.innerHTML = html;
   bindProtocolHandlers();
 }
-
 function bindProtocolHandlers(){
   var pr = state.protocol;
+  var stampNow = function(name){ stamp(name); saveState(); };
+
   /* Gate */
   var code = document.getElementById('protoCode');
-  if(code) code.oninput = function(){ pr.participantCode = code.value; saveState(); };
+  if(code) code.oninput = function(){ pr.participantCode = code.value; stampNow("participantCode"); };
   document.querySelectorAll('[data-consent]').forEach(function(el){
     el.onclick = function(){
       var k = el.dataset.consent;
       pr.consent = pr.consent || {participate:null,record:null,photo:null};
       pr.consent[k] = !pr.consent[k];
-      saveState(); renderProtocol();
+      stampNow("consent."+k);
+      renderProtocol();
     };
   });
   var sp = document.getElementById('protoSafety');
-  if(sp) sp.onchange = function(){ pr.safetyPause = sp.value; saveState(); };
+  if(sp) sp.onchange = function(){ pr.safetyPause = sp.value; stampNow("safetyPause"); };
 
   /* Baseline */
   var map1 = {pBWhy:"whyToday", pBNeed:"biggestNeed", pBOutcome:"usefulOutcome", pBProbe:"probe"};
   Object.keys(map1).forEach(function(id){
     var el = document.getElementById(id);
-    if(el) el.oninput = function(){ pr.baseline = pr.baseline || {}; pr.baseline[map1[id]] = el.value; saveState(); };
+    if(el) el.oninput = function(){ pr.baseline = pr.baseline || {}; pr.baseline[map1[id]] = el.value; stampNow("baseline."+map1[id]); };
   });
 
   /* Soft dive */
   var sdFree = document.getElementById('pSdFree');
-  if(sdFree) sdFree.oninput = function(){ pr.softdive = pr.softdive || {}; pr.softdive.freeform = sdFree.value; saveState(); };
+  if(sdFree) sdFree.oninput = function(){ pr.softdive = pr.softdive || {}; pr.softdive.freeform = sdFree.value; stampNow("softdive.freeform"); };
   document.querySelectorAll('[data-card]').forEach(function(el){
     el.onclick = function(){
       pr.softdive = pr.softdive || {cardsPresent:[]};
@@ -2581,73 +2607,73 @@ function bindProtocolHandlers(){
       var card = el.dataset.card;
       var i = pr.softdive.cardsPresent.indexOf(card);
       if(i>=0) pr.softdive.cardsPresent.splice(i,1); else pr.softdive.cardsPresent.push(card);
-      saveState(); renderProtocol();
+      stampNow("softdive.cardsPresent");
+      renderProtocol();
     };
   });
   var sdChoice = document.getElementById('pSdChoice');
-  if(sdChoice) sdChoice.onchange = function(){ pr.softdive = pr.softdive || {}; pr.softdive.choice = sdChoice.value; saveState(); renderProtocol(); };
+  if(sdChoice) sdChoice.onchange = function(){ pr.softdive = pr.softdive || {}; pr.softdive.choice = sdChoice.value; stampNow("softdive.choice"); renderProtocol(); };
 
   /* Build tree */
   var map2 = {pBtSituation:"situation", pBtHelps:"structureHelps", pBtMisses:"structureMisses", pBtMismatch:"mismatch"};
   Object.keys(map2).forEach(function(id){
     var el = document.getElementById(id);
-    if(el) el.oninput = function(){ pr.buildtree = pr.buildtree || {}; pr.buildtree[map2[id]] = el.value; saveState(); };
+    if(el) el.oninput = function(){ pr.buildtree = pr.buildtree || {}; pr.buildtree[map2[id]] = el.value; stampNow("buildtree."+map2[id]); };
   });
 
   /* Mirror */
   var mo = document.getElementById('pMirrorObs');
-  if(mo) mo.oninput = function(){ pr.mirror = pr.mirror || {}; pr.mirror.observed = mo.value; saveState(); };
+  if(mo) mo.oninput = function(){ pr.mirror = pr.mirror || {}; pr.mirror.observed = mo.value; stampNow("mirror.observed"); };
   var mr = document.getElementById('pMirrorResp');
-  if(mr) mr.oninput = function(){ pr.mirror = pr.mirror || {}; pr.mirror.participantResponse = mr.value; saveState(); };
+  if(mr) mr.oninput = function(){ pr.mirror = pr.mirror || {}; pr.mirror.participantResponse = mr.value; stampNow("mirror.participantResponse"); };
   var ms = document.getElementById('pMirrorStatus');
-  if(ms) ms.onchange = function(){ pr.mirror = pr.mirror || {}; pr.mirror.tensionStatus = ms.value; saveState(); };
+  if(ms) ms.onchange = function(){ pr.mirror = pr.mirror || {}; pr.mirror.tensionStatus = ms.value; stampNow("mirror.tensionStatus"); };
 
   /* Quiz phase extras */
   var pw = document.getElementById('pWord');
-  if(pw) pw.oninput = function(){ pr.participantWord = pw.value; saveState(); };
+  if(pw) pw.oninput = function(){ pr.participantWord = pw.value; stampNow("participantWord"); };
   var map3 = {pRealism:"judged", pAttempt:"attempt", pConstraint:"constraint"};
   Object.keys(map3).forEach(function(id){
     var el = document.getElementById(id);
-    if(el) el.oninput = function(){ pr.realism = pr.realism || {}; pr.realism[map3[id]] = el.value; saveState(); };
+    if(el) el.oninput = function(){ pr.realism = pr.realism || {}; pr.realism[map3[id]] = el.value; stampNow("realism."+map3[id]); };
   });
 
   /* Dark */
   document.querySelectorAll('[data-darkconsent]').forEach(function(el){
-    el.onclick = function(){ pr.darkConsent = el.dataset.darkconsent === "yes"; saveState(); renderProtocol(); };
+    el.onclick = function(){ pr.darkConsent = el.dataset.darkconsent === "yes"; stampNow("darkConsent"); renderProtocol(); };
   });
   var dt = document.getElementById('pDarkText');
-  if(dt) dt.oninput = function(){ pr.darkText = dt.value; saveState(); };
+  if(dt) dt.oninput = function(){ pr.darkText = dt.value; stampNow("darkText"); };
 
   /* Anchor */
   var ae = document.getElementById('pAnchorEnough');
-  if(ae) ae.oninput = function(){ pr.anchor = pr.anchor || {}; pr.anchor.enough = ae.value; saveState(); };
+  if(ae) ae.oninput = function(){ pr.anchor = pr.anchor || {}; pr.anchor.enough = ae.value; stampNow("anchor.enough"); };
   var ax = document.getElementById('pAnchorExample');
-  if(ax) ax.oninput = function(){ pr.anchor = pr.anchor || {}; pr.anchor.enoughExample = ax.value; saveState(); };
+  if(ax) ax.oninput = function(){ pr.anchor = pr.anchor || {}; pr.anchor.enoughExample = ax.value; stampNow("anchor.enoughExample"); };
 
   /* Certificate */
   var cf = document.getElementById('pCertFeedback');
-  if(cf) cf.oninput = function(){ pr.certificate = pr.certificate || {}; pr.certificate.feedback = cf.value; saveState(); };
+  if(cf) cf.oninput = function(){ pr.certificate = pr.certificate || {}; pr.certificate.feedback = cf.value; stampNow("certificate.feedback"); };
   var cp = document.getElementById('pCertPhoto');
-  if(cp) cp.onchange = function(){ pr.certificate = pr.certificate || {}; pr.certificate.photoTaken = cp.value==="yes"?true:cp.value==="no"?false:null; saveState(); };
+  if(cp) cp.onchange = function(){ pr.certificate = pr.certificate || {}; pr.certificate.photoTaken = cp.value==="yes"?true:cp.value==="no"?false:null; stampNow("certificate.photoTaken"); };
 
   /* Return */
   var rn = document.getElementById('pReturnNeed');
-  if(rn) rn.oninput = function(){ pr.returnPhase = pr.returnPhase || {}; pr.returnPhase.biggestNeed = rn.value; saveState(); };
+  if(rn) rn.oninput = function(){ pr.returnPhase = pr.returnPhase || {}; pr.returnPhase.biggestNeed = rn.value; stampNow("returnPhase.biggestNeed"); };
   var ro = document.getElementById('pReturnOutcome');
-  if(ro) ro.oninput = function(){ pr.returnPhase = pr.returnPhase || {}; pr.returnPhase.usefulOutcome = ro.value; saveState(); };
+  if(ro) ro.oninput = function(){ pr.returnPhase = pr.returnPhase || {}; pr.returnPhase.usefulOutcome = ro.value; stampNow("returnPhase.usefulOutcome"); };
   var ei = document.getElementById('pEndInterp');
-  if(ei) ei.onchange = function(){ pr.endInterpretation = ei.value; saveState(); };
+  if(ei) ei.onchange = function(){ pr.endInterpretation = ei.value; stampNow("endInterpretation"); };
 
   /* Reflexivity */
   var map4 = {pRxLed:"led", pRxDefensive:"defensive", pRxWanted:"wanted", pRxObserved:"observed", pRxRephrased:"rephrased", pRxInference:"inferenceVsFact"};
   Object.keys(map4).forEach(function(id){
-    var el = document.getElementById(id);
-    if(el) el.oninput = function(){ pr.reflexivity = pr.reflexivity || {}; pr.reflexivity[map4[id]] = el.value; saveState(); };
+    ` var el = document.getElementById(id);
+    if(el) el.oninput = function(){ pr.reflexivity = pr.reflexivity || {}; pr.reflexivity[map4[id]] = el.value; stampstNow("reflexivity."+map4[id]); };
   });
-  var rxc = document.getElementById('pRxComplete');
-  if(rxc) rxc.onchange = function(){ pr.reflexivity = pr.reflexivity || {}; pr.reflexivity.complete = rxc.value; saveState(); };
+  var rampxc = document.getElementById('pRxComplete');
+  if(r()xc) rxc.onchange = function(){ pr.reflexivity = pr.reflexivity || {}; pr.reflexivity.complete = rxc.value; stampNow("reflexivity.complete"); };
 }
-
 /* ============================================================
    EXPORT — Airtable-shaped JSON + CSV
    ============================================================ */
@@ -2683,7 +2709,8 @@ function renderExport(){
     "Total emergencies": totalEm,
     "If-then plans": {cue:state.ifThenCue, action:state.ifThenAction},
     "Chosen actions": state.chosenActions,
-    "Journal entries": state.journal.length
+    "Journal entries": state.journal.length,
+    "Field timestamps (UTC)": (state.protocol.stamps || {})
   };
   var json = JSON.stringify(data, null, 2);
   var csv = exportCsv(data);
@@ -2715,10 +2742,12 @@ function exportCsv(obj){
   return "Field,Value\n"+rows.map(function(r){return '"'+r[0].replace(/"/g,'""')+'","'+r[1].replace(/"/g,'""')+'"'}).join("\n");
 }
 function copyExport(){
+  renderExport();
   navigator.clipboard.writeText(window._exportJson||"").then(function(){alert("JSON copied.")}).catch(function(){alert("Copy failed — select manually.")});
 }
 window.copyExport = copyExport;
 function downloadExport(){
+  renderExport();
   var blob = new Blob([window._exportCsv||""], {type:"text/csv"});
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -2727,7 +2756,6 @@ function downloadExport(){
   URL.revokeObjectURL(a.href);
 }
 window.downloadExport = downloadExport;
-
 /* ============================================================
    INIT
    ============================================================ */
