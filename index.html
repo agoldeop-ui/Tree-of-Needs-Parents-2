@@ -2668,11 +2668,11 @@ function bindProtocolHandlers(){
   /* Reflexivity */
   var map4 = {pRxLed:"led", pRxDefensive:"defensive", pRxWanted:"wanted", pRxObserved:"observed", pRxRephrased:"rephrased", pRxInference:"inferenceVsFact"};
   Object.keys(map4).forEach(function(id){
-    ` var el = document.getElementById(id);
-    if(el) el.oninput = function(){ pr.reflexivity = pr.reflexivity || {}; pr.reflexivity[map4[id]] = el.value; stampstNow("reflexivity."+map4[id]); };
+    var el = document.getElementById(id);
+    if(el) el.oninput = function(){ pr.reflexivity = pr.reflexivity || {}; pr.reflexivity[map4[id]] = el.value; stampNow("reflexivity."+map4[id]); };
   });
-  var rampxc = document.getElementById('pRxComplete');
-  if(r()xc) rxc.onchange = function(){ pr.reflexivity = pr.reflexivity || {}; pr.reflexivity.complete = rxc.value; stampNow("reflexivity.complete"); };
+  var rxc = document.getElementById('pRxComplete');
+  if(rxc) rxc.onchange = function(){ pr.reflexivity = pr.reflexivity || {}; pr.reflexivity.complete = rxc.value; stampNow("reflexivity.complete"); };
 }
 /* ============================================================
    EXPORT — Airtable-shaped JSON + CSV
