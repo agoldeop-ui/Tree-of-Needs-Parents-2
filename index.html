@@ -841,7 +841,7 @@ var state = {
   fakeDoors:{save:0, dark:0},
   play:{ view:"menu", scope:null, subScope:null, cards:[], sorted:{}, currentIdx:0, sayItCard:null, sayItRound:1, strategyRound:[], strategyIdx:0 },
   /* Protocol additions */
-  protocol:{ phase:"gate", done:{}, skipped:{}, participantCode:"",
+  protocol:{ phase:"gate", started:false, done:{}, skipped:{}, participantCode:"",
     consent:{participate:null, record:null, photo:null}, safetyPause:null,
     baseline:{whyToday:"",biggestNeed:"",usefulOutcome:"",probe:""},
     softdive:{choice:"",freeform:"",cardsPresent:[],fitNotes:""},
@@ -2257,9 +2257,16 @@ function protoNavBar(){
     return '<button class="proto-step-dot '+st+'" onclick="protoGoTo(\''+s.id+'\')">'+s.label+'</button>';
   }).join('')+'</div>';
 }
-function protoGoTo(id){ state.protocol.phase = id; saveState(); renderProtocol(); }
+function protoGoTo(id){ state.protocol.started = true; state.protocol.phase = id; saveState(); renderProtocol(); }
 window.protoGoTo = protoGoTo;
-function protoDone(id){
+  function startProtocol(){
+  state.protocol.started = true;
+  state.protocol.phase = "gate";
+  saveState();
+  renderProtocol();
+}
+window.startProtocol = startProtocol;
+  function protoDone(id){
   state.protocol.done = state.protocol.done || {};
   state.protocol.done[id] = true;
   var idx = PROTOCOL_STEPS.findIndex(function(s){return s.id===id});
@@ -2283,7 +2290,7 @@ function renderProtocol(){
   var phase = pr.phase || "gate";
 
   /* Welcome screen if nothing started */
-  if(phase==="gate" && !pr.done.gate && pr.consent.participate===null){
+  if(!pr.started && !pr.done.gate && pr.consent.participate===null){
     c.innerHTML =
       '<div class="today-hero"><h1>Research protocol</h1><p>The 10-phase Parent Zoom protocol, layered over the working app. Each phase opens the matching app screen. Your notes here are stored separately and export to Airtable.</p></div>'+
       '<div class="protocol-step">'+
@@ -2291,7 +2298,7 @@ function renderProtocol(){
         '<p class="ps-purpose">This is a guided 95-minute reflection, not therapy or diagnosis. Participants can skip, change their mind, pause, or stop at any time. Use a participant code (e.g. TN-014), not a name.</p>'+
         '<div class="ps-note"><strong>Mom Test alignment:</strong> optional past-specific probes are marked ◇ and never required. Core protocol always comes first.</div>'+
         '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">'+
-          '<button class="btn btn-primary" onclick="protoGoTo(\'gate\')">Start the protocol</button>'+
+          '<button class="btn btn-primary" onclick="startProtocol()">Start the protocol</button>'+
           '<button class="btn btn-outline" onclick="navigateTo(\'diagnostic\')">Just take the 15 statements</button>'+
         '</div>'+
       '</div>';
